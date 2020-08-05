@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Display a map</title>
+<meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+<link rel="stylesheet" type="text/css" href="./css/mapstyle.css" />
+<script src="https://api.mapbox.com/mapbox-gl-js/v1.11.1/mapbox-gl.js"></script>
+<link href="https://api.mapbox.com/mapbox-gl-js/v1.11.1/mapbox-gl.css" rel="stylesheet" />
+<script src='https://npmcdn.com/@turf/turf/turf.min.js'></script>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+<style>
+
+body {
+    font-family: sans-serif;
+}
+
+#mapWrap, .credit {
+    width:100%;
+    display: block;
+    font-family: sans-serif;
+    color:#555;
+    max-width:1200px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.credit {
+    line-height: 6px;
+    font-size: 12px;
+    margin-top:20px;
+    color:#888;
+}
+
+.credit a {
+    text-decoration:none;
+    color: coral;
+}
+
+</style>
+</head>
+
+<body>
+<div id="mapWrap">
+    <div class="column left">
+        <h2>Lazaro Gamio peaks using Turf.js</h2>
+        <p>Inspired by the recent discussions around the merits of proportional <a href="https://twitter.com/LazaroGamio/status/1247511346201198593?s=20" target="blank">peaks</a> vs. <a href="https://twitter.com/Elijah_Meeks/status/1239714483230015488?s=20" target="blank">circles</a> in mapping absolute counts, I wanted to create data-driven peaks using <a href="http://turfjs.org/" target="blank">Turf.js</a></p>
+        <div id="animatePeaks">Show Divisions</div>
+    </div>
+    <div class="column right">
+        <div id="map"></div>
+    </div>
+</div>
+<div class="credit">
+    <p>Data: <a href="https://data.torontopolice.on.ca/search?q=crime" target="_blank">Toronto Police Service</a></p>
+    <p>By: <a href="http://www.mapto.ca/" target="_blank">MapTO</a></p>
+    <p>Code: <a href="https://github.com/willymaps/turfpeaks" target="_blank">Github</a></p>
+</div>
+
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+
+var pointData = [];
+var mapArray = [];
+var labelArray = [];
+var labelCollection;
+var lineCollection;
+var peakHeightCalc = 8000;
+// var peakHeightCalc = 50000;
+// var maxCount = 7205;
+var animateState = true;
+var mapBounds = [[-79.6453857421875, 43.54854811091286],[-79.10224914550781, 43.887995955026405]];
+
+document.getElementById("animatePeaks").addEventListener("click", displayPeaks);
+
+mapboxgl.accessToken = 'pk.eyJ1Ijoid2lsbGlhbWJlbmRhdmlzIiwiYSI6IlVrb3BGVzQifQ.jeHxDCnpXXvAXKfAFEYG-A';
+var map = new mapboxgl.Map({
+    container: 'map',
+    style: 'mapbox://styles/williambendavis/cjry02c8y0yn21fp97zhaysip',
+    center: [-79.37, 43.72],
+    maxBounds: mapBounds
+});
+
+
+map.on('load', function() {
+
+    for (i=0;i < pointData.features.length;i++) {
+
+        let barHeight = pointData.features[i].properties.NUMPOINTS;
+        let barHeightAdj = barHeight/peakHeightCalc;
+        let barShuffle = Math.floor(Math.random() * (1000 - 100) + 100) / 500000;
+
+        // working perk line
+        let peakRandomCentre = barShuffleNum(i, barShuffle, pointData);
+
+        let peakLeftLat = pointData.features[i].geometry.coordinates[1];
+        let peakLeftLng = peakRandomCentre-0.002;
+
+        let peakTopLat = pointData.features[i].geometry.coordinates[1]+barHeightAdj;
+        let peakTopLng = peakRandomCentre;
+
+        let peakRightLat = pointData.features[i].geometry.coordinates[1];
+        let peakRightLng = peakRandomCentre+0.002;
+
+
+        let peakLine = turf.lineString([[peakLeftLng, peakLeftLat], [peakTopLng, peakTopLat], [peakRightLng, peakRightLat]], {height: barHeight});
+
+        let labelPoint = turf.point([peakTopLng, peakTopLat], {height: barHeight});
+
+        mapArray.push(peakLine);
+        labelArray.push(labelPoint);
+
+        if (i == pointData.features.length-1) {
+            console.log('done calc');
+            // console.log('mapArray', mapArray);
+
+            lineCollection = turf.featureCollection(mapArray);
+            labelCollection = turf.featureCollection(labelArray);
+            // console.log('collection', labelCollection);
+            buildLines(lineCollection, labelCollection);
+        }
+    }
+
+});
+
+function barShuffleNum(num, random, layer) {
+
+    if( num % 2 == 0 ) {
+        // console.log('even');
+        return layer.features[i].geometry.coordinates[0]+random;
+    } else {
+        // console.log('odd');
+        return layer.features[i].geometry.coordinates[0]-random;
+    }
+
+}
+
+
+function buildLines(lines, labels, boundaries) {
+
+    // load your geojson
+    map.addSource('bars', {
+      type: 'geojson',
+      lineMetrics: true,
+      data: lines
+    });
+
+
+    map.addLayer({
+        'id': 'barLines',
+        'type': 'line',
+        'source': 'bars',
+        'layout': {
+            'line-join': 'round',
+            'line-cap': 'round'
+        },
+        'paint': {
+            'line-color': '#111',
+            'line-width': 1.7,
+            'line-opacity': 0.85,
+            'line-gradient': [
+            'interpolate',
+            ['linear'],
+            ['line-progress'],
+                0,
+                '#fde0dd',
+                0.25,
+                '#fa9fb5',
+                0.5,
+                '#c51b8a',
+                0.75,
+                '#fa9fb5',
+                1,
+                '#fde0dd'
+            ]
+        }
+    });
+
+    map.addLayer({
+        'id': 'boundariesFill',
+        'type': 'line',
+        'source': {
+            'type': 'geojson',
+            'data': './data/police_bounds.geojson'
+        },
+        'layout': {
+            'visibility': 'none',
+        },
+        'paint': {
+            'line-width': 1,
+            'line-color': '#333'
+        }
+    });
+     
+    map.addLayer({
+        'id': 'boundariesLabel',
+        'type': 'symbol',
+        'source': {
+            'type': 'geojson',
+            'data': './data/police_bounds_data_update.geojson'
+        },
+        'layout': {
+            'visibility': 'none',
+            'text-field': [
+                'format',
+                    ['get', 'mci_rate_p_1000'],
+                    { 'font-scale': 1.2 },
+                    '\n',
+                    {},
+                    ['concat', 'per', ' 1000'],
+                    {
+                    'font-scale': 0.8,
+                    'text-font': [
+                        'literal',
+                        ['Arial Unicode MS Regular']
+                    ]
+                    },
+                    '\n',
+                    {},
+                    ['concat', ['get', 'AREA_NAME'], ' division'],
+                    {
+                    'font-scale': 0.6,
+                    'text-font': [
+                        'literal',
+                        ['Arial Unicode MS Regular']
+                    ]
+                    },
+            ],
+            'text-ignore-placement': false
+        },
+        'paint': {
+            'text-color': '#202',
+            'text-halo-color': '#fff',
+            'text-halo-width': 2
+        }
+    });
+
+
+
+}
+
+
+// btn function
+function displayPeaks() {
+    if (animateState == true) {
+        document.getElementById('animatePeaks').innerHTML = "Hide Police Divisions";
+        console.log('clicked true');
+        animateState = false;
+        map.setPaintProperty('barLines', 'line-opacity', 0.1);
+        map.setLayoutProperty('boundariesFill', 'visibility', 'visible');
+        map.setLayoutProperty('boundariesLabel', 'visibility', 'visible');
+    } else {
+        animateState = true;
+        console.log('clicked false');
+        document.getElementById('animatePeaks').innerHTML = "Show Police Divisions";
+        map.setPaintProperty('barLines', 'line-opacity', 0.85);
+        map.setLayoutProperty('boundariesFill', 'visibility', 'none');
+        map.setLayoutProperty('boundariesLabel', 'visibility', 'none');
+    }
+}
+
+// function peakGrowth() {
+
+//     // let mapAniArray = [];
+//     // console.log('lineCollection', lineCollection);
+
+//     for (let i = 0; i < maxCount; i++) {
+//         (function(index) {
+
+//             animateTimeout = setTimeout(function() {
+//             let maxHeight = index;
+//             // console.log('index', index);
+
+//             // console.log('newHeight', newHeight);
+
+//             if (i % 2 === 0) {
+
+//                 let newData = getNewHeight(maxHeight);
+//                 // console.log('newData', newData);
+
+//                 let lineData = newData[0];
+//                 let labelData = newData[1];
+                
+//                 let maxHeightText = maxHeight.toString();
+                
+//                 map.getSource('bars').setData(lineData);
+//                 map.getSource('labels').setData(labelData);
+//                 map.setLayoutProperty('linelabels', 'text-field', maxHeightText);
+//                 map.setLayoutProperty('linelabels', 'visibility', 'none');
+//                 map.setPaintProperty('linelabels', 'text-opacity', 'visible');
+//             }
+
+//                     // if we're at the end of the loop...
+//             if (i === maxCount-1) {
+//                 console.log('done drawing');
+//             }
+
+
+//             // how quickly do we want to iterate through our animation
+//             }, i * 10);
+//         })(i);
+//     }
+// }
+
+
+// function getNewHeight(max) {
+
+//     // let updatedLine = lineCollection;
+//     for (let i=0;i<lineCollection.features.length; i++) {
+//         let peakHeight = lineCollection.features[i].properties.height;
+//         // console.log('peakHeight', peakHeight);
+//         let newHeightCalc = max/peakHeightCalc;
+//         let peakHeightCoords = lineCollection.features[i].geometry.coordinates[1];
+//         let peakTopLat = pointData.features[i].geometry.coordinates[1]+newHeightCalc;
+//         let peakTopLng = peakHeightCoords[0];
+
+//         // push each animation frame to array
+//         if (peakHeight > max) {
+//             lineCollection.features[i].geometry.coordinates[1] = [peakTopLng, peakTopLat];
+//             labelCollection.features[i].geometry.coordinates = [peakTopLng, peakTopLat];
+//             // labelCollection.features[i].properties.height = max;
+//             // console.log('new height');
+//         }
+
+//         if (i === lineCollection.features.length-1) {
+//             return [lineCollection, labelCollection];
+//         }
+
+//     }
+// }
+
+$(document).ready(function (){
+    $.ajax({
+      url:"./data/mci_count.geojson",
+      dataType: "json",
+      success: function (data) {
+        pointData = data;
+      },
+      error: function () {
+        console.log('error loading data');
+      }
+    });
+});
+
+</script>
+
+</body>
+</html>
